@@ -105,7 +105,6 @@ void Parser::parse()
 
 	uint32_t offset = 5;
 
-	SmallVector<Instruction> instructions;
 	while (offset < len)
 	{
 		Instruction instr = {};
@@ -120,14 +119,11 @@ void Parser::parse()
 
 		offset += instr.count;
 
-		if (offset > spirv.size())
+		if (offset > len)
 			SPIRV_CROSS_THROW("SPIR-V instruction goes out of bounds.");
 
-		instructions.push_back(instr);
+		parse(instr);
 	}
-
-	for (auto &i : instructions)
-		parse(i);
 
 	for (auto &fixup : forward_pointer_fixups)
 	{
@@ -185,8 +181,6 @@ const uint32_t *Parser::stream(const Instruction &instr) const
 	if (!instr.length)
 		return nullptr;
 
-	if (instr.offset + instr.length > ir.spirv.size())
-		SPIRV_CROSS_THROW("Compiler::stream() out of range.");
 	return &ir.spirv[instr.offset];
 }
 

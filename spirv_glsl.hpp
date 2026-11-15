@@ -460,6 +460,7 @@ protected:
 	                                  SmallVector<uint32_t> &inherited_expressions);
 	virtual void emit_subgroup_op(const Instruction &i);
 	virtual std::string type_to_glsl(const SPIRType &type, uint32_t id = 0);
+	std::string type_to_glsl_impl(const SPIRType &type, uint32_t id);
 	virtual std::string builtin_to_glsl(BuiltIn builtin, StorageClass storage);
 	virtual void emit_struct_member(const SPIRType &type, uint32_t member_type_id, uint32_t index,
 	                                const std::string &qualifier = "", uint32_t base_offset = 0);
@@ -558,8 +559,7 @@ protected:
 		}
 		else
 		{
-			for (uint32_t i = 0; i < indent; i++)
-				buffer << "    ";
+			buffer.append_spaces(size_t(indent) * 4u);
 			statement_inner(std::forward<Ts>(ts)...);
 			buffer << '\n';
 		}
@@ -850,7 +850,7 @@ protected:
 	std::string to_extract_constant_composite_expression(uint32_t result_type, const SPIRConstant &c,
 	                                                     const uint32_t *chain, uint32_t length);
 	static bool needs_enclose_expression(const std::string &expr);
-	std::string enclose_expression(const std::string &expr);
+	std::string enclose_expression(std::string expr);
 	std::string dereference_expression(const SPIRType &expression_type, const std::string &expr);
 	std::string address_of_expression(const std::string &expr);
 	void strip_enclosed_expression(std::string &expr);
@@ -938,11 +938,13 @@ protected:
 
 	// Usage tracking. If a temporary is used more than once, use the temporary instead to
 	// avoid AST explosion when SPIRV is generated with pure SSA and doesn't write stuff to variables.
-	std::unordered_map<uint32_t, uint32_t> expression_usage_counts;
+	SmallVector<uint32_t> expression_usage_counts;
+	uint32_t &expression_usage_count(uint32_t id);
 	void track_expression_read(uint32_t id);
 
 	SmallVector<std::string> forced_extensions;
 	SmallVector<std::string> header_lines;
+	std::unordered_map<uint64_t, std::string> type_to_glsl_cache;
 
 	// Used when expressions emit extra opcodes with their own unique IDs,
 	// and we need to reuse the IDs across recompilation loops.
@@ -1048,7 +1050,7 @@ protected:
 
 	uint32_t consume_temporary_in_precision_context(uint32_t type_id, uint32_t id, Options::Precision precision);
 	std::unordered_map<uint32_t, uint32_t> temporary_to_mirror_precision_alias;
-	std::unordered_set<uint32_t> composite_insert_overwritten;
+	IDSet composite_insert_overwritten;
 	std::unordered_set<uint32_t> block_composite_insert_overwrite;
 
 	std::string emit_for_loop_initializers(const SPIRBlock &block);
@@ -1114,6 +1116,7 @@ protected:
 	std::unordered_set<uint32_t> masked_output_builtins;
 
 	FloatFormatter *float_formatter = nullptr;
+	mutable std::unordered_map<uint32_t, std::string> float_format_cache;
 	std::string format_float(float value) const;
 	std::string format_double(double value) const;
 

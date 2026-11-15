@@ -52,11 +52,7 @@ public:
 
 	uint32_t get_immediate_dominator(uint32_t block) const
 	{
-		auto itr = immediate_dominators.find(block);
-		if (itr != std::end(immediate_dominators))
-			return itr->second;
-		else
-			return 0;
+		return block < immediate_dominators.size() ? immediate_dominators[block] : 0;
 	}
 
 	bool is_reachable(uint32_t block) const
@@ -66,6 +62,8 @@ public:
 
 	uint32_t get_visit_order(uint32_t block) const
 	{
+		if (block < visit_order_cache.size() && visit_order_cache[block] != 0)
+			return visit_order_cache[block];
 		auto itr = visit_order.find(block);
 		assert(itr != std::end(visit_order));
 		int v = itr->second.order;
@@ -124,7 +122,9 @@ private:
 	std::unordered_map<uint32_t, SmallVector<uint32_t>> preceding_edges;
 	std::unordered_map<uint32_t, SmallVector<uint32_t>> virtual_dominance_preceding_edges;
 	std::unordered_map<uint32_t, SmallVector<uint32_t>> succeeding_edges;
-	std::unordered_map<uint32_t, uint32_t> immediate_dominators;
+	std::vector<uint32_t> immediate_dominators;
+	mutable std::vector<uint32_t> visit_order_cache;
+	mutable std::unordered_map<uint32_t, uint32_t> loop_dominators;
 	std::unordered_map<uint32_t, VisitOrder> visit_order;
 	SmallVector<uint32_t> post_order;
 	SmallVector<uint32_t> empty_vector;
@@ -133,6 +133,7 @@ private:
 	void add_virtual_dominance_branch(uint32_t from, uint32_t to);
 	void build_post_order_visit_order();
 	void build_immediate_dominators();
+	void set_immediate_dominator(uint32_t block, uint32_t dominator);
 	void post_order_visit_branches(uint32_t block);
 	void post_order_visit_resolve(uint32_t block);
 	void post_order_visit_entry(uint32_t block);

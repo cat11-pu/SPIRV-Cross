@@ -2709,8 +2709,7 @@ void Compiler::inherit_expression_dependencies(uint32_t dst, uint32_t source_exp
 
 	// Don't inherit any expression dependencies if the expression in dst
 	// is not a forwarded temporary.
-	if (forwarded_temporaries.find(dst) == end(forwarded_temporaries) ||
-	    forced_temporaries.find(dst) != end(forced_temporaries))
+	if (!forwarded_temporaries.count(dst) || forced_temporaries.count(dst))
 	{
 		return;
 	}

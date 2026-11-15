@@ -54,7 +54,7 @@ void CFG::build_immediate_dominators()
 {
 	// Traverse the post-order in reverse and build up the immediate dominator tree.
 	immediate_dominators.clear();
-	immediate_dominators[func.entry_block] = func.entry_block;
+	set_immediate_dominator(func.entry_block, func.entry_block);
 
 	for (auto i = post_order.size(); i; i--)
 	{
@@ -67,19 +67,27 @@ void CFG::build_immediate_dominators()
 
 			for (auto &edge : pred)
 			{
-				if (immediate_dominators[block])
+				uint32_t dom = get_immediate_dominator(block);
+				if (dom)
 				{
-					assert(immediate_dominators[edge]);
-					immediate_dominators[block] = find_common_dominator(immediate_dominators[block], edge);
+					assert(get_immediate_dominator(edge));
+					set_immediate_dominator(block, find_common_dominator(dom, edge));
 				}
 				else
-					immediate_dominators[block] = edge;
+					set_immediate_dominator(block, edge);
 			}
 		};
 
 		resolve_preds(preceding_edges[block]);
 		resolve_preds(virtual_dominance_preceding_edges[block]);
 	}
+}
+
+void CFG::set_immediate_dominator(uint32_t block, uint32_t dominator)
+{
+	if (block >= immediate_dominators.size())
+		immediate_dominators.resize(size_t(block) + 1);
+	immediate_dominators[block] = dominator;
 }
 
 bool CFG::is_back_edge(uint32_t to) const
@@ -290,6 +298,9 @@ void CFG::post_order_visit_resolve(uint32_t block_id)
 
 	visited = true;
 	visit_block.order = ++visit_count;
+	if (block_id >= visit_order_cache.size())
+		visit_order_cache.resize(size_t(block_id) + 1);
+	visit_order_cache[block_id] = uint32_t(visit_block.order);
 	post_order.push_back(block_id);
 }
 
@@ -298,6 +309,7 @@ void CFG::build_post_order_visit_order()
 	uint32_t block = func.entry_block;
 	visit_count = 0;
 	visit_order.clear();
+	visit_order_cache.clear();
 	post_order.clear();
 	post_order_visit_entry(block);
 }
@@ -324,13 +336,29 @@ void CFG::add_virtual_dominance_branch(uint32_t from, uint32_t to)
 
 uint32_t CFG::find_loop_dominator(uint32_t block_id) const
 {
+	auto cached = loop_dominators.find(block_id);
+	if (cached != end(loop_dominators))
+		return cached->second;
+
+	SmallVector<uint32_t> path;
+	uint32_t result = SPIRBlock::NoDominator;
+	bool found_loop = false;
 	while (block_id != SPIRBlock::NoDominator)
 	{
+		cached = loop_dominators.find(block_id);
+		if (cached != end(loop_dominators))
+		{
+			result = cached->second;
+			break;
+		}
+
 		auto itr = preceding_edges.find(block_id);
 		if (itr == end(preceding_edges))
-			return SPIRBlock::NoDominator;
+			break;
 		if (itr->second.empty())
-			return SPIRBlock::NoDominator;
+			break;
+
+		path.push_back(block_id);
 
 		uint32_t pred_block_id = SPIRBlock::NoDominator;
 		bool ignore_loop_header = false;
@@ -365,11 +393,19 @@ uint32_t CFG::find_loop_dominator(uint32_t block_id) const
 		{
 			auto &block = compiler.get<SPIRBlock>(block_id);
 			if (block.merge == SPIRBlock::MergeLoop)
-				return block_id;
+			{
+				result = block_id;
+				found_loop = true;
+				break;
+			}
 		}
 	}
 
-	return block_id;
+	for (auto block : path)
+		loop_dominators[block] = result;
+	if (!found_loop)
+		loop_dominators[block_id] = result;
+	return result;
 }
 
 bool CFG::node_terminates_control_flow_in_sub_graph(BlockID from, BlockID to) const

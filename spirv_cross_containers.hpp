@@ -695,6 +695,29 @@ public:
 		return ret;
 	}
 
+	void append_spaces(size_t count)
+	{
+		while (count)
+		{
+			size_t avail = current_buffer.size - current_buffer.offset;
+			if (avail == 0)
+			{
+				saved_buffers.push_back(current_buffer);
+				current_buffer.buffer = static_cast<char *>(malloc(BlockSize));
+				if (!current_buffer.buffer)
+					SPIRV_CROSS_THROW("Out of memory.");
+				current_buffer.offset = 0;
+				current_buffer.size = BlockSize;
+				avail = BlockSize;
+			}
+
+			size_t count_to_write = count < avail ? count : avail;
+			memset(current_buffer.buffer + current_buffer.offset, ' ', count_to_write);
+			current_buffer.offset += count_to_write;
+			count -= count_to_write;
+		}
+	}
+
 	void reset()
 	{
 		for (auto &saved : saved_buffers)

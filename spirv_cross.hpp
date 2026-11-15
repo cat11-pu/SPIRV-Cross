@@ -185,6 +185,46 @@ struct EntryPoint
 	ExecutionModel execution_model;
 };
 
+// Hot code paths frequently test whether an ID is present in a small set.
+// SPIR-V IDs are dense and bounded, so an indexed bitset avoids hashing and
+// per-node allocations while preserving set semantics.
+class IDSet
+{
+public:
+	struct InsertResult
+	{
+		bool second;
+	};
+
+	InsertResult insert(uint32_t id)
+	{
+		if (id >= flags.size())
+			flags.resize(size_t(id) + 1);
+		bool inserted = flags[id] == 0;
+		flags[id] = 1;
+		return { inserted };
+	}
+
+	void erase(uint32_t id)
+	{
+		if (id < flags.size())
+			flags[id] = 0;
+	}
+
+	bool count(uint32_t id) const
+	{
+		return id < flags.size() && flags[id] != 0;
+	}
+
+	void clear()
+	{
+		flags.clear();
+	}
+
+private:
+	std::vector<uint8_t> flags;
+};
+
 class Compiler
 {
 public:
@@ -771,7 +811,7 @@ protected:
 	void flush_all_aliased_variables();
 	void register_global_read_dependencies(const SPIRBlock &func, uint32_t id);
 	void register_global_read_dependencies(const SPIRFunction &func, uint32_t id);
-	std::unordered_set<uint32_t> invalid_expressions;
+	IDSet invalid_expressions;
 
 	void update_name_cache(std::unordered_set<std::string> &cache, std::string &name);
 
@@ -972,11 +1012,11 @@ protected:
 
 	bool get_common_basic_type(const SPIRType &type, SPIRType::BaseType &base_type);
 
-	std::unordered_set<uint32_t> forced_temporaries;
-	std::unordered_set<uint32_t> forwarded_temporaries;
-	std::unordered_set<uint32_t> suppressed_usage_tracking;
-	std::unordered_set<uint32_t> hoisted_temporaries;
-	std::unordered_set<uint32_t> forced_invariant_temporaries;
+	IDSet forced_temporaries;
+	IDSet forwarded_temporaries;
+	IDSet suppressed_usage_tracking;
+	IDSet hoisted_temporaries;
+	IDSet forced_invariant_temporaries;
 
 	Bitset active_input_builtins;
 	Bitset active_output_builtins;

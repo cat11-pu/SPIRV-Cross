@@ -5113,7 +5113,7 @@ void CompilerHLSL::emit_load(const Instruction &instruction)
 			string load_expr;
 			read_access_chain(&load_expr, "", *chain);
 
-			bool forward = should_forward(ptr) && forced_temporaries.find(id) == end(forced_temporaries);
+			bool forward = should_forward(ptr) && !forced_temporaries.count(id);
 
 			// If we are forwarding this load,
 			// don't register the read to access chain here, defer that to when we actually use the expression,
@@ -6534,7 +6534,7 @@ void CompilerHLSL::emit_instruction(const Instruction &instruction)
 
 		if (var)
 		{
-			bool forward = forced_temporaries.find(id) == end(forced_temporaries);
+			bool forward = !forced_temporaries.count(id);
 			auto &e = emit_op(result_type, id, imgexpr, forward);
 
 			if (!pure)

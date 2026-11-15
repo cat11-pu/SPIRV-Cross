@@ -368,6 +368,8 @@ void CompilerGLSL::reset(uint32_t iteration_count)
 	expression_usage_counts.clear();
 	forwarded_temporaries.clear();
 	suppressed_usage_tracking.clear();
+	type_to_glsl_cache.clear();
+	float_format_cache.clear();
 	buffer_pointer_variables.clear();
 
 	// Ensure that we declare phi-variable copies even if the original declaration isn't deferred
@@ -5614,15 +5616,17 @@ bool CompilerGLSL::needs_enclose_expression(const std::string &expr)
 	return need_parens;
 }
 
-string CompilerGLSL::enclose_expression(const string &expr)
+string CompilerGLSL::enclose_expression(string expr)
 {
 	// If this expression contains any spaces which are not enclosed by parentheses,
 	// we need to enclose it so we can treat the whole string as an expression.
 	// This happens when two expressions have been part of a binary op earlier.
 	if (needs_enclose_expression(expr))
-		return join('(', expr, ')');
-	else
-		return expr;
+	{
+		expr.insert(expr.begin(), '(');
+		expr.push_back(')');
+	}
+	return expr;
 }
 
 string CompilerGLSL::dereference_expression(const SPIRType &expr_type, const std::string &expr)
@@ -5890,8 +5894,7 @@ string CompilerGLSL::to_atomic_ptr_expression(uint32_t id)
 
 string CompilerGLSL::to_expression(uint32_t id, bool register_expression_read)
 {
-	auto itr = invalid_expressions.find(id);
-	if (itr != end(invalid_expressions))
+	if (invalid_expressions.count(id))
 		handle_invalid_expression(id);
 
 	if (ir.ids[id].get_type() == TypeExpression)
@@ -5909,7 +5912,7 @@ string CompilerGLSL::to_expression(uint32_t id, bool register_expression_read)
 		// and see that we should not forward reads of the original variable.
 		auto &expr = get<SPIRExpression>(id);
 		for (uint32_t dep : expr.expression_dependencies)
-			if (invalid_expressions.find(dep) != end(invalid_expressions))
+			if (invalid_expressions.count(dep))
 				handle_invalid_expression(dep);
 	}
 
@@ -7381,7 +7384,7 @@ bool CompilerGLSL::expression_read_implies_multiple_reads(uint32_t id) const
 SPIRExpression &CompilerGLSL::emit_op(uint32_t result_type, uint32_t result_id, const string &rhs, bool forwarding,
                                       bool suppress_usage_tracking)
 {
-	if (forwarding && (forced_temporaries.find(result_id) == end(forced_temporaries)))
+	if (forwarding && !forced_temporaries.count(result_id))
 	{
 		// Just forward it without temporary.
 		// If the forward is trivial, we do not force flushing to temporary for this expression.
@@ -7401,7 +7404,7 @@ SPIRExpression &CompilerGLSL::emit_op(uint32_t result_type, uint32_t result_id, 
 
 void CompilerGLSL::emit_transposed_op(uint32_t result_type, uint32_t result_id, const string &rhs, bool forwarding)
 {
-	if (forwarding && (forced_temporaries.find(result_id) == end(forced_temporaries)))
+	if (forwarding && !forced_temporaries.count(result_id))
 	{
 		// Just forward it without temporary.
 		// If the forward is trivial, we do not force flushing to temporary for this expression.
@@ -12243,7 +12246,7 @@ void CompilerGLSL::track_expression_read(uint32_t id)
 	// In this case, it's better to just bind the complex expression to the temporary and read that temporary twice.
 	if (expression_is_forwarded(id) && !expression_suppresses_usage_tracking(id))
 	{
-		auto &v = expression_usage_counts[id];
+		auto &v = expression_usage_count(id);
 		v++;
 
 		// If we create an expression outside a loop,
@@ -12264,9 +12267,16 @@ void CompilerGLSL::track_expression_read(uint32_t id)
 	}
 }
 
+uint32_t &CompilerGLSL::expression_usage_count(uint32_t id)
+{
+	if (id >= expression_usage_counts.size())
+		expression_usage_counts.resize(size_t(id) + 1);
+	return expression_usage_counts[id];
+}
+
 bool CompilerGLSL::args_will_forward(uint32_t id, const uint32_t *args, uint32_t num_args, bool pure)
 {
-	if (forced_temporaries.find(id) != end(forced_temporaries))
+	if (forced_temporaries.count(id))
 		return false;
 
 	for (uint32_t i = 0; i < num_args; i++)
@@ -12599,7 +12609,7 @@ bool CompilerGLSL::optimize_read_modify_write(const SPIRType &type, const string
 
 void CompilerGLSL::register_control_dependent_expression(uint32_t expr)
 {
-	if (forwarded_temporaries.find(expr) == end(forwarded_temporaries))
+	if (!forwarded_temporaries.count(expr))
 		return;
 
 	assert(current_emitting_block);
@@ -13112,7 +13122,7 @@ void CompilerGLSL::emit_instruction(const Instruction &instruction)
 		// If we're loading from memory that cannot be changed by the shader,
 		// just forward the expression directly to avoid needless temporaries.
 		// If an expression is mutable and forwardable, we speculate that it is immutable.
-		bool forward = should_forward(ptr) && forced_temporaries.find(id) == end(forced_temporaries);
+		bool forward = should_forward(ptr) && !forced_temporaries.count(id);
 
 		// Volatile memory access requires the value be read exactly once from
 		// memory.  Do not forward the expression so that re-evaluation at each
@@ -13569,7 +13579,7 @@ void CompilerGLSL::emit_instruction(const Instruction &instruction)
 			// In order to avoid start tracking invalid variables,
 			// just avoid the forwarding problem altogether.
 			bool forward = args_will_forward(id, arg, length, pure) && !callee_has_out_variables && pure &&
-			               (forced_temporaries.find(id) == end(forced_temporaries));
+			               !forced_temporaries.count(id);
 
 			if (emit_return_value_as_argument)
 			{
@@ -13753,7 +13763,7 @@ void CompilerGLSL::emit_instruction(const Instruction &instruction)
 		auto &type = get<SPIRType>(result_type);
 
 		// We can only split the expression here if our expression is forwarded as a temporary.
-		bool allow_base_expression = forced_temporaries.find(id) == end(forced_temporaries);
+		bool allow_base_expression = !forced_temporaries.count(id);
 
 		// Do not allow base expression for struct members. We risk doing "swizzle" optimizations in this case.
 		// Long vector or arrays are complex too.
@@ -15457,7 +15467,7 @@ void CompilerGLSL::emit_instruction(const Instruction &instruction)
 
 		if (var)
 		{
-			bool forward = forced_temporaries.find(id) == end(forced_temporaries);
+			bool forward = !forced_temporaries.count(id);
 			auto &e = emit_op(result_type, id, imgexpr, forward);
 
 			// We only need to track dependencies if we're reading from image load/store.
@@ -17600,6 +17610,65 @@ string CompilerGLSL::type_to_glsl_constructor(const SPIRType &type)
 // depend on a specific object's use of that type.
 string CompilerGLSL::type_to_glsl(const SPIRType &type, uint32_t id)
 {
+	// Builtin type names are queried heavily while emitting expressions. The
+	// type object is immutable after parsing, so cache the common, id-independent
+	// cases and avoid rebuilding the same string for every instruction.
+	bool cacheable = id == 0 && !type.pointer && type.vecsize <= 4 && type.columns <= 4;
+	switch (type.op)
+	{
+	case OpTypeBool:
+	case OpTypeInt:
+	case OpTypeFloat:
+	case OpTypeVector:
+	case OpTypeMatrix:
+		break;
+
+	default:
+		cacheable = false;
+		break;
+	}
+
+	switch (type.basetype)
+	{
+	case SPIRType::Boolean:
+	case SPIRType::SByte:
+	case SPIRType::UByte:
+	case SPIRType::Short:
+	case SPIRType::UShort:
+	case SPIRType::Int:
+	case SPIRType::UInt:
+	case SPIRType::Half:
+	case SPIRType::Float:
+	case SPIRType::Double:
+	case SPIRType::Int64:
+	case SPIRType::UInt64:
+		break;
+
+	default:
+		cacheable = false;
+		break;
+	}
+
+	uint64_t cache_key = 0;
+	if (cacheable)
+	{
+		cache_key = uint64_t(type.basetype) |
+		            (uint64_t(type.vecsize) << 16) |
+		            (uint64_t(type.columns) << 24) |
+		            (uint64_t(type.op) << 32);
+		auto itr = type_to_glsl_cache.find(cache_key);
+		if (itr != end(type_to_glsl_cache))
+			return itr->second;
+	}
+
+	auto result = type_to_glsl_impl(type, id);
+	if (cacheable)
+		type_to_glsl_cache.emplace(cache_key, result);
+	return result;
+}
+
+string CompilerGLSL::type_to_glsl_impl(const SPIRType &type, uint32_t id)
+{
 	if (is_physical_pointer(type) && !is_physical_pointer_to_buffer_block(type))
 	{
 		// Need to create a magic type name which compacts the entire type information.
@@ -18809,7 +18878,7 @@ bool CompilerGLSL::attempt_emit_loop_header(SPIRBlock &block, SPIRBlock::Method 
 		// We can then take the condition expression and create a for (; cond ; ) { body; } structure instead.
 		emit_block_instructions_with_masked_debug(block);
 
-		bool condition_is_temporary = forced_temporaries.find(block.condition) == end(forced_temporaries);
+		bool condition_is_temporary = !forced_temporaries.count(block.condition);
 
 		bool flushes_phi = flush_phi_required(block.self, block.true_block) ||
 		                   flush_phi_required(block.self, block.false_block);
@@ -18896,7 +18965,7 @@ bool CompilerGLSL::attempt_emit_loop_header(SPIRBlock &block, SPIRBlock::Method 
 		// We can then take the condition expression and create a for (; cond ; ) { body; } structure instead.
 		emit_block_instructions_with_masked_debug(child);
 
-		bool condition_is_temporary = forced_temporaries.find(child.condition) == end(forced_temporaries);
+		bool condition_is_temporary = !forced_temporaries.count(child.condition);
 
 		bool flushes_phi = flush_phi_required(child.self, child.true_block) ||
 		                   flush_phi_required(child.self, child.false_block);
@@ -21047,8 +21116,16 @@ std::string CompilerGLSL::format_float(float value) const
 	if (float_formatter)
 		return float_formatter->format_float(value);
 
+	uint32_t bits;
+	memcpy(&bits, &value, sizeof(bits));
+	auto itr = float_format_cache.find(bits);
+	if (itr != end(float_format_cache))
+		return itr->second;
+
 	// default behavior
-	return convert_to_string(value, current_locale_radix_character);
+	auto result = convert_to_string(value, current_locale_radix_character);
+	float_format_cache.emplace(bits, result);
+	return result;
 }
 
 std::string CompilerGLSL::format_double(double value) const
