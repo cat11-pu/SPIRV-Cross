@@ -29,6 +29,58 @@ using namespace SPIRV_CROSS_NAMESPACE;
 
 namespace spirv_cross_util
 {
+namespace
+{
+struct BindingPoint
+{
+	uint32_t descriptor_set = 0;
+	uint32_t binding = 0;
+	bool has_descriptor_set = false;
+	bool has_binding = false;
+};
+
+BindingPoint get_binding_point(const Compiler &compiler, VariableID id)
+{
+	BindingPoint point;
+	point.has_descriptor_set = compiler.has_decoration(id, DecorationDescriptorSet);
+	point.has_binding = compiler.has_decoration(id, DecorationBinding);
+
+	if (point.has_descriptor_set)
+		point.descriptor_set = compiler.get_decoration(id, DecorationDescriptorSet);
+	if (point.has_binding)
+		point.binding = compiler.get_decoration(id, DecorationBinding);
+
+	return point;
+}
+
+void inherit_missing_binding_components(BindingPoint &dst, const BindingPoint &src)
+{
+	if (!dst.has_descriptor_set && src.has_descriptor_set)
+	{
+		dst.descriptor_set = src.descriptor_set;
+		dst.has_descriptor_set = true;
+	}
+
+	if (!dst.has_binding && src.has_binding)
+	{
+		dst.binding = src.binding;
+		dst.has_binding = true;
+	}
+}
+
+std::string printable_name(const Compiler &compiler, VariableID id)
+{
+	auto name = compiler.get_name(id);
+	return name.empty() ? join("ID ", id) : name;
+}
+
+std::string describe_pair(const Compiler &compiler, const CombinedImageSampler &sampler)
+{
+	return join("image \"", printable_name(compiler, sampler.image_id), "\" + sampler \"",
+	            printable_name(compiler, sampler.sampler_id), "\"");
+}
+} // namespace
+
 void rename_interface_variable(Compiler &compiler, const SmallVector<Resource> &resources, uint32_t location,
                                const std::string &name)
 {
@@ -56,22 +108,66 @@ void rename_interface_variable(Compiler &compiler, const SmallVector<Resource> &
 	}
 }
 
-void inherit_combined_sampler_bindings(Compiler &compiler)
+SmallVector<CombinedImageSamplerBinding> resolve_combined_image_sampler_bindings(Compiler &compiler)
 {
 	auto &samplers = compiler.get_combined_image_samplers();
-	for (auto &s : samplers)
-	{
-		if (compiler.has_decoration(s.image_id, DecorationDescriptorSet))
-		{
-			uint32_t set = compiler.get_decoration(s.image_id, DecorationDescriptorSet);
-			compiler.set_decoration(s.combined_id, DecorationDescriptorSet, set);
-		}
+	SmallVector<CombinedImageSamplerBinding> resolved;
+	resolved.reserve(samplers.size());
 
-		if (compiler.has_decoration(s.image_id, DecorationBinding))
+	for (auto &sampler : samplers)
+	{
+		BindingPoint point = get_binding_point(compiler, sampler.image_id);
+		inherit_missing_binding_components(point, get_binding_point(compiler, sampler.sampler_id));
+		inherit_missing_binding_components(point, get_binding_point(compiler, sampler.combined_id));
+
+		CombinedImageSamplerBinding binding;
+		binding.combined_id = sampler.combined_id;
+		binding.image_id = sampler.image_id;
+		binding.sampler_id = sampler.sampler_id;
+		binding.descriptor_set = point.descriptor_set;
+		binding.binding = point.binding;
+		binding.has_descriptor_set = point.has_descriptor_set;
+		binding.has_binding = point.has_binding;
+		resolved.push_back(binding);
+	}
+
+	// Resolve everything before mutating the compiler, so a conflict is reported atomically.
+	for (size_t i = 0; i < resolved.size(); i++)
+	{
+		if (!resolved[i].has_binding)
+			continue;
+
+		uint32_t set_i = resolved[i].has_descriptor_set ? resolved[i].descriptor_set : 0;
+		for (size_t j = 0; j < i; j++)
 		{
-			uint32_t binding = compiler.get_decoration(s.image_id, DecorationBinding);
-			compiler.set_decoration(s.combined_id, DecorationBinding, binding);
+			if (!resolved[j].has_binding)
+				continue;
+
+			uint32_t set_j = resolved[j].has_descriptor_set ? resolved[j].descriptor_set : 0;
+			if (set_i == set_j && resolved[i].binding == resolved[j].binding)
+			{
+				auto &a = samplers[j];
+				auto &b = samplers[i];
+				SPIRV_CROSS_THROW(join("Combined image sampler binding conflict: ", describe_pair(compiler, a),
+				                       " and ", describe_pair(compiler, b), " both resolve to set ", set_i,
+				                       ", binding ", resolved[i].binding, "."));
+			}
 		}
 	}
+
+	for (auto &binding : resolved)
+	{
+		if (binding.has_descriptor_set)
+			compiler.set_decoration(binding.combined_id, DecorationDescriptorSet, binding.descriptor_set);
+		if (binding.has_binding)
+			compiler.set_decoration(binding.combined_id, DecorationBinding, binding.binding);
+	}
+
+	return resolved;
+}
+
+void inherit_combined_sampler_bindings(Compiler &compiler)
+{
+	resolve_combined_image_sampler_bindings(compiler);
 }
 } // namespace spirv_cross_util

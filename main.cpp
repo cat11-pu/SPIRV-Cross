@@ -806,6 +806,7 @@ static void print_help_glsl()
 	                "\t[--vulkan-glsl-disable-ext-samplerless-texture-functions]:\n\t\tDo not allow use of GL_EXT_samperless_texture_functions, even in Vulkan GLSL.\n"
 	                "\t\tUse of texelFetch and similar might have to create dummy samplers to work around it.\n"
 	                "\t[--combined-samplers-inherit-bindings]:\n\t\tInherit binding information from the textures when building combined image samplers from separate textures and samplers.\n"
+	                "\t\tFails if two image/sampler pairs would resolve to the same set and binding.\n"
 	                "\t[--no-support-nonzero-baseinstance]:\n\t\tWhen using gl_InstanceIndex with desktop GL,\n"
 	                "\t\tassume that base instance is always 0, and do not attempt to fix up gl_InstanceID to match Vulkan semantics.\n"
 	                "\t[--pls-in format input-name]:\n\t\tRemaps a subpass input with name into a GL_EXT_pixel_local_storage input.\n"

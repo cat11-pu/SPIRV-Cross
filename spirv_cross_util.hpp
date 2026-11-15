@@ -31,6 +31,32 @@ namespace spirv_cross_util
 void rename_interface_variable(SPIRV_CROSS_NAMESPACE::Compiler &compiler,
                                const SPIRV_CROSS_NAMESPACE::SmallVector<SPIRV_CROSS_NAMESPACE::Resource> &resources,
                                uint32_t location, const std::string &name);
+
+struct CombinedImageSamplerBinding
+{
+	SPIRV_CROSS_NAMESPACE::VariableID combined_id = 0;
+	SPIRV_CROSS_NAMESPACE::VariableID image_id = 0;
+	SPIRV_CROSS_NAMESPACE::VariableID sampler_id = 0;
+	uint32_t descriptor_set = 0;
+	uint32_t binding = 0;
+	bool has_descriptor_set = false;
+	bool has_binding = false;
+};
+
+// Resolves the unified binding point for every combined image sampler created by
+// Compiler::build_combined_image_samplers().
+//
+// The image binding point is authoritative. A separate image and sampler may legitimately use
+// different source binding points; after merging, the image point is the descriptor location and
+// the sampler becomes state attached to that descriptor. If the image is missing a descriptor set
+// or binding, the corresponding component is inherited from the sampler. A binding point already
+// present on the combined variable is used as a final fallback.
+//
+// Throws CompilerError if two distinct image/sampler pairs resolve to the same (set, binding).
+// The compiler is left unchanged when this happens.
+SPIRV_CROSS_NAMESPACE::SmallVector<CombinedImageSamplerBinding>
+resolve_combined_image_sampler_bindings(SPIRV_CROSS_NAMESPACE::Compiler &compiler);
+
 void inherit_combined_sampler_bindings(SPIRV_CROSS_NAMESPACE::Compiler &compiler);
 } // namespace spirv_cross_util
 

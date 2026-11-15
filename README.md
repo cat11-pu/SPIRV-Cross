@@ -391,6 +391,10 @@ Another thing you need to remember is when using samplers and textures in HLSL t
 // Builds a mapping for all combinations of images and samplers.
 compiler->build_combined_image_samplers();
 
+// Optional: give each combined sampler a concrete set/binding point.
+// The image binding is authoritative; the sampler only fills missing components.
+auto bindings = spirv_cross_util::resolve_combined_image_sampler_bindings(*compiler);
+
 // Give the remapped combined samplers new names.
 // Here you can also set up decorations if you want (binding = #N).
 for (auto &remap : compiler->get_combined_image_samplers())
@@ -399,6 +403,14 @@ for (auto &remap : compiler->get_combined_image_samplers())
             compiler->get_name(remap.sampler_id)));
 }
 ```
+
+`resolve_combined_image_sampler_bindings()` returns the resolved
+`(descriptor_set, binding)` for every pair. If the image has no descriptor set or binding,
+the missing component is inherited from the sampler. A binding already present on the combined
+variable is used as a final fallback. If two distinct image/sampler pairs resolve to the same
+`(set, binding)`, the function throws `CompilerError` and leaves the compiler unchanged.
+`inherit_combined_sampler_bindings()` is the compatibility wrapper for callers that do not need
+the resolved values.
 
 If your target is Vulkan GLSL, `--vulkan-semantics` will emit separate image samplers as you'd expect.
 The command line client calls `Compiler::build_combined_image_samplers` automatically, but if you're calling the library, you'll need to do this yourself.
@@ -555,4 +567,3 @@ Otherwise, `./test_shaders.py` will fail with error code.
 
 To obtain a CSV of static shader cycle counts before and after going through spirv-cross, add
 `--malisc` flag to `./test_shaders`. This requires the Mali Offline Compiler to be installed in PATH.
-
