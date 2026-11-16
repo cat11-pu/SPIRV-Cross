@@ -64,12 +64,20 @@ private:
 	template <typename T>
 	T &get(uint32_t id)
 	{
+		if (id >= ir.ids.size())
+			SPIRV_CROSS_THROW("Cannot get ID " + std::to_string(id) +
+			                  "; it is out of range for the declared ID bound " + std::to_string(ir.ids.size()) +
+			                  ".");
 		return variant_get<T>(ir.ids[id]);
 	}
 
 	template <typename T>
 	T *maybe_get(uint32_t id)
 	{
+		if (id >= ir.ids.size())
+			SPIRV_CROSS_THROW("Cannot get ID " + std::to_string(id) +
+			                  "; it is out of range for the declared ID bound " + std::to_string(ir.ids.size()) +
+			                  ".");
 		if (ir.ids[id].get_type() == static_cast<Types>(T::type))
 			return &get<T>(id);
 		else
@@ -79,12 +87,20 @@ private:
 	template <typename T>
 	const T &get(uint32_t id) const
 	{
+		if (id >= ir.ids.size())
+			SPIRV_CROSS_THROW("Cannot get ID " + std::to_string(id) +
+			                  "; it is out of range for the declared ID bound " + std::to_string(ir.ids.size()) +
+			                  ".");
 		return variant_get<T>(ir.ids[id]);
 	}
 
 	template <typename T>
 	const T *maybe_get(uint32_t id) const
 	{
+		if (id >= ir.ids.size())
+			SPIRV_CROSS_THROW("Cannot get ID " + std::to_string(id) +
+			                  "; it is out of range for the declared ID bound " + std::to_string(ir.ids.size()) +
+			                  ".");
 		if (ir.ids[id].get_type() == T::type)
 			return &get<T>(id);
 		else

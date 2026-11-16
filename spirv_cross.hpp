@@ -642,6 +642,10 @@ protected:
 	template <typename T>
 	T &get(uint32_t id)
 	{
+		if (id >= ir.ids.size())
+			SPIRV_CROSS_THROW("Cannot get ID " + std::to_string(id) +
+			                  "; it is out of range for the declared ID bound " +
+			                  std::to_string(ir.ids.size()) + ".");
 		return variant_get<T>(ir.ids[id]);
 	}
 
@@ -659,6 +663,10 @@ protected:
 	template <typename T>
 	const T &get(uint32_t id) const
 	{
+		if (id >= ir.ids.size())
+			SPIRV_CROSS_THROW("Cannot get ID " + std::to_string(id) +
+			                  "; it is out of range for the declared ID bound " +
+			                  std::to_string(ir.ids.size()) + ".");
 		return variant_get<T>(ir.ids[id]);
 	}
 
@@ -785,6 +793,10 @@ protected:
 	bool block_is_pure(const SPIRBlock &block);
 	bool function_is_control_dependent(const SPIRFunction &func);
 	bool block_is_control_dependent(const SPIRBlock &block);
+	// Guards against infinite recursion when malformed modules contain
+	// recursive call graphs.
+	std::unordered_set<uint32_t> active_purity_analysis;
+	std::unordered_set<uint32_t> active_control_dependence_analysis;
 
 	bool execution_is_branchless(const SPIRBlock &from, const SPIRBlock &to) const;
 	bool execution_is_direct_branch(const SPIRBlock &from, const SPIRBlock &to) const;
@@ -865,6 +877,9 @@ protected:
 
 		Compiler &compiler;
 		std::unordered_map<uint32_t, uint32_t> result_types;
+		// Functions currently on the traversal stack. Recursive call graphs
+		// (only possible in malformed modules) must not recurse forever.
+		std::unordered_set<uint32_t> active_function_traversal;
 		const SPIRType *get_expression_result_type(uint32_t id) const;
 		bool enable_result_types = false;
 
@@ -1075,6 +1090,9 @@ protected:
 		// Access chains used in multiple blocks mean hoisting all the variables used to construct the access chain as not all backends can use pointers.
 		// This is also relevant when forwarding opaque objects since we cannot lower these to temporaries.
 		std::unordered_map<uint32_t, std::unordered_set<uint32_t>> rvalue_forward_children;
+		// Guards against infinite recursion when malformed modules contain
+		// cyclic forward references between expressions.
+		std::unordered_set<uint32_t> notify_variable_access_active;
 		const SPIRBlock *current_block = nullptr;
 	};
 

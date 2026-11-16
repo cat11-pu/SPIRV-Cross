@@ -1763,6 +1763,12 @@ uint32_t CompilerGLSL::type_to_packed_alignment(const SPIRType &type, const Bits
 		else
 			SPIRV_CROSS_THROW("AddressingModelPhysicalStorageBuffer64 must be used for PhysicalStorageBuffer.");
 	}
+
+	// A non-physical pointer has no defined packing layout. Only malformed
+	// modules can ask for one (e.g. a struct with a non-physical pointer
+	// member); reject instead of recursing through the pointee type.
+	if (type.pointer)
+		SPIRV_CROSS_THROW("Cannot compute packed alignment for pointer types.");
 	else if (is_array(type))
 	{
 		uint32_t minimum_alignment = 1;
@@ -1885,6 +1891,12 @@ uint32_t CompilerGLSL::type_to_packed_size(const SPIRType &type, const Bitset &f
 		else
 			SPIRV_CROSS_THROW("AddressingModelPhysicalStorageBuffer64 must be used for PhysicalStorageBuffer.");
 	}
+
+	// A non-physical pointer has no defined packing layout. Only malformed
+	// modules can ask for one (e.g. a struct with a non-physical pointer
+	// member); reject instead of recursing through the pointee type.
+	if (type.pointer)
+		SPIRV_CROSS_THROW("Cannot compute packed size for pointer types.");
 	else if (is_array(type))
 	{
 		uint32_t packed_size = to_array_size_literal(type) * type_to_packed_array_stride(type, flags, packing);
@@ -16841,7 +16853,11 @@ void CompilerGLSL::append_global_func_args(const SPIRFunction &func, uint32_t in
 	for (uint32_t arg_idx = index; arg_idx < arg_cnt; arg_idx++)
 	{
 		auto &arg = args[arg_idx];
-		assert(arg.alias_global_variable);
+		// A malformed module can call a function with fewer arguments than it
+		// declares. Reject instead of assuming trailing arguments are global
+		// variable aliases.
+		if (!arg.alias_global_variable)
+			SPIRV_CROSS_THROW("Function call argument count does not match function declaration.");
 
 		// If the underlying variable needs to be declared
 		// (ie. a local variable with deferred declaration), do so now.

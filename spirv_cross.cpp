@@ -353,19 +353,37 @@ string Compiler::to_name(uint32_t id, bool allow_alias) const
 
 bool Compiler::function_is_pure(const SPIRFunction &func)
 {
+	// Recursive call graphs can only come from malformed modules.
+	// Break the cycle instead of recursing forever.
+	if (!active_purity_analysis.insert(func.self).second)
+		return true;
+
 	for (auto block : func.blocks)
 		if (!block_is_pure(get<SPIRBlock>(block)))
+		{
+			active_purity_analysis.erase(func.self);
 			return false;
+		}
 
+	active_purity_analysis.erase(func.self);
 	return true;
 }
 
 bool Compiler::function_is_control_dependent(const SPIRFunction &func)
 {
+	// Recursive call graphs can only come from malformed modules.
+	// Break the cycle instead of recursing forever.
+	if (!active_control_dependence_analysis.insert(func.self).second)
+		return false;
+
 	for (auto block : func.blocks)
 		if (block_is_control_dependent(get<SPIRBlock>(block)))
+		{
+			active_control_dependence_analysis.erase(func.self);
 			return true;
+		}
 
+	active_control_dependence_analysis.erase(func.self);
 	return false;
 }
 
@@ -2021,19 +2039,24 @@ bool Compiler::traverse_all_reachable_opcodes(const SPIRBlock &block, OpcodeHand
 		if (op == OpFunctionCall)
 		{
 			auto &func = get<SPIRFunction>(ops[2]);
-			if (handler.follow_function_call(func))
+			// Recursive call graphs can only come from malformed modules.
+			// Do not follow a function which is already being traversed.
+			if (handler.active_function_traversal.count(func.self) == 0 &&
+			    handler.follow_function_call(func))
 			{
 				if (handler.enable_result_types)
 					for (auto &arg : func.arguments)
 						if (!arg.alias_global_variable)
 							handler.result_types[arg.id] = arg.type;
 
+				handler.active_function_traversal.insert(func.self);
 				if (!handler.begin_function_scope(ops, i.length))
 					return false;
 				if (!traverse_all_reachable_opcodes(get<SPIRFunction>(ops[2]), handler))
 					return false;
 				if (!handler.end_function_scope(ops, i.length))
 					return false;
+				handler.active_function_traversal.erase(func.self);
 
 				handler.rearm_current_block(block);
 			}
@@ -3519,6 +3542,11 @@ void Compiler::AnalyzeVariableScopeAccessHandler::notify_variable_access(uint32_
 	if (id == 0)
 		return;
 
+	// A cyclic expression graph can only come from a malformed module.
+	// Stop recursing instead of overflowing the stack.
+	if (!notify_variable_access_active.insert(id).second)
+		return;
+
 	// Access chains used in multiple blocks mean hoisting all the variables used to construct the access chain as not all backends can use pointers.
 	auto itr = rvalue_forward_children.find(id);
 	if (itr != end(rvalue_forward_children))
@@ -3529,6 +3557,8 @@ void Compiler::AnalyzeVariableScopeAccessHandler::notify_variable_access(uint32_
 		accessed_variables_to_block[id].insert(block);
 	else if (id_is_potential_temporary(id))
 		accessed_temporaries_to_block[id].insert(block);
+
+	notify_variable_access_active.erase(id);
 }
 
 bool Compiler::AnalyzeVariableScopeAccessHandler::id_is_phi_variable(uint32_t id) const

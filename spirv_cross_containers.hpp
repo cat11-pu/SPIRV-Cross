@@ -96,13 +96,19 @@ template <typename T>
 class VectorView
 {
 public:
-	T &operator[](size_t i) SPIRV_CROSS_NOEXCEPT
+	// Bounds-checked so that malformed input cannot cause out-of-bounds
+	// access when indices (e.g. IDs) come straight from the input module.
+	T &operator[](size_t i)
 	{
+		if (i >= buffer_size)
+			SPIRV_CROSS_THROW("Vector access out of range.");
 		return ptr[i];
 	}
 
-	const T &operator[](size_t i) const SPIRV_CROSS_NOEXCEPT
+	const T &operator[](size_t i) const
 	{
+		if (i >= buffer_size)
+			SPIRV_CROSS_THROW("Vector access out of range.");
 		return ptr[i];
 	}
 

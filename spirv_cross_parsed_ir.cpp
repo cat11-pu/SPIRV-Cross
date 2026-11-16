@@ -30,6 +30,16 @@ using namespace SPIRV_CROSS_SPV_HEADER_NAMESPACE;
 
 namespace SPIRV_CROSS_NAMESPACE
 {
+// A struct type can never have more members than fit in a single (max 65535
+// words) OpTypeStruct instruction, so a larger member index can only come
+// from a malformed module. Reject it instead of resizing member metadata
+// to absurd, module-controlled sizes.
+static void check_member_index(uint32_t index)
+{
+	if (index >= 0x10000)
+		SPIRV_CROSS_THROW("Member index " + std::to_string(index) + " exceeds the maximum of 65535.");
+}
+
 ParsedIR::ParsedIR()
 {
 	// If we move ParsedIR, we need to make sure the pointer stays fixed since the child Variant objects consume a pointer to this group,
@@ -361,6 +371,7 @@ void ParsedIR::set_name(ID id, const string &name)
 void ParsedIR::set_member_name(TypeID id, uint32_t index, const string &name)
 {
 	auto &m = meta[id];
+	check_member_index(index);
 	m.members.resize(max(m.members.size(), size_t(index) + 1));
 	m.members[index].alias = name;
 	if (!is_valid_identifier(name) || is_reserved_identifier(name, true, false))
@@ -480,6 +491,7 @@ void ParsedIR::set_decoration(ID id, Decoration decoration, uint32_t argument)
 void ParsedIR::set_member_decoration(TypeID id, uint32_t index, Decoration decoration, uint32_t argument)
 {
 	auto &m = meta[id];
+	check_member_index(index);
 	m.members.resize(max(m.members.size(), size_t(index) + 1));
 	auto &dec = m.members[index];
 	dec.decoration_flags.set(decoration);
@@ -544,6 +556,11 @@ void ParsedIR::set_member_decoration(TypeID id, uint32_t index, Decoration decor
 // as an array length. The id must be a constant instruction (SPIRConstant or SPIRConstantOp).
 void ParsedIR::mark_used_as_array_length(ID id)
 {
+	if (id >= ids.size())
+		SPIRV_CROSS_THROW("Cannot mark ID " + std::to_string(id) +
+		                  " as array length; it is out of range for the declared ID bound " +
+		                  std::to_string(ids.size()) + ".");
+
 	switch (ids[id].get_type())
 	{
 	case TypeConstant:
@@ -589,7 +606,8 @@ void ParsedIR::mark_used_as_array_length(ID id)
 		break;
 
 	default:
-		assert(0);
+		SPIRV_CROSS_THROW("Cannot mark ID " + std::to_string(id) +
+		                  " as array length; it does not refer to a constant.");
 	}
 }
 
@@ -867,6 +885,7 @@ const Bitset &ParsedIR::get_decoration_bitset(ID id) const
 void ParsedIR::set_member_decoration_string(TypeID id, uint32_t index, Decoration decoration, const string &argument)
 {
 	auto &m = meta[id];
+	check_member_index(index);
 	m.members.resize(max(m.members.size(), size_t(index) + 1));
 	auto &dec = meta[id].members[index];
 	dec.decoration_flags.set(decoration);
@@ -991,7 +1010,10 @@ void ParsedIR::reset_all_of_type(Types type)
 
 void ParsedIR::add_typed_id(Types type, ID id)
 {
-	assert(id < ids.size());
+	if (id >= ids.size())
+		SPIRV_CROSS_THROW("Cannot add typed ID " + std::to_string(id) +
+		                  "; it is out of range for the declared ID bound " + std::to_string(ids.size()) +
+		                  ".");
 
 	if (loop_iteration_depth_hard != 0)
 		SPIRV_CROSS_THROW("Cannot add typed ID while looping over it.");
@@ -1095,7 +1117,13 @@ ParsedIR::LoopLock &ParsedIR::LoopLock::operator=(LoopLock &&other) SPIRV_CROSS_
 
 void ParsedIR::make_constant_null(uint32_t id, uint32_t type, bool add_to_typed_id_set)
 {
-	assert(id < ids.size());
+	if (id >= ids.size())
+		SPIRV_CROSS_THROW("Cannot make constant null ID " + std::to_string(id) +
+		                  "; it is out of range for the declared ID bound " + std::to_string(ids.size()) +
+		                  ".");
+
+	if (id == type)
+		SPIRV_CROSS_THROW("Self-referential constant declaration is not allowed.");
 
 	auto &constant_type = get<SPIRType>(type);
 

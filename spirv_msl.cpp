@@ -4313,7 +4313,8 @@ uint32_t CompilerMSL::add_interface_block(StorageClass storage, bool patch)
 		if (get_execution_model() == ExecutionModelFragment && storage == StorageClassOutput && !patch &&
 		    ((is_builtin && ((bi_type == BuiltInFragDepth && (!msl_options.enable_frag_depth_builtin || uses_explicit_early_fragment_test())) ||
 		                     (bi_type == BuiltInFragStencilRefEXT && (!msl_options.enable_frag_stencil_ref_builtin || uses_explicit_early_fragment_test())))) ||
-		     (!is_builtin && !(msl_options.enable_frag_output_mask & (1 << location)))))
+		     // Locations are module-controlled; a 32-bit mask cannot enable locations >= 32.
+		     (!is_builtin && (location >= 32 || !(msl_options.enable_frag_output_mask & (1u << location))))))
 		{
 			hidden = true;
 			disabled_frag_outputs.push_back(var_id);
