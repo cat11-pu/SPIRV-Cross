@@ -389,6 +389,9 @@ void ParsedIR::set_decoration_string(ID id, Decoration decoration, const string 
 
 void ParsedIR::set_decoration(ID id, Decoration decoration, uint32_t argument)
 {
+	if (decoration == DecorationBuiltIn && argument >= static_cast<uint32_t>(BuiltInMax))
+		SPIRV_CROSS_THROW("BuiltIn decoration is out of range.");
+
 	auto &dec = meta[id].decoration;
 	dec.decoration_flags.set(decoration);
 
@@ -479,6 +482,9 @@ void ParsedIR::set_decoration(ID id, Decoration decoration, uint32_t argument)
 
 void ParsedIR::set_member_decoration(TypeID id, uint32_t index, Decoration decoration, uint32_t argument)
 {
+	if (decoration == DecorationBuiltIn && argument >= static_cast<uint32_t>(BuiltInMax))
+		SPIRV_CROSS_THROW("BuiltIn decoration is out of range.");
+
 	auto &m = meta[id];
 	m.members.resize(max(m.members.size(), size_t(index) + 1));
 	auto &dec = m.members[index];
@@ -991,7 +997,8 @@ void ParsedIR::reset_all_of_type(Types type)
 
 void ParsedIR::add_typed_id(Types type, ID id)
 {
-	assert(id < ids.size());
+	if (id >= ids.size())
+		SPIRV_CROSS_THROW("SPIR-V ID is out of bounds.");
 
 	if (loop_iteration_depth_hard != 0)
 		SPIRV_CROSS_THROW("Cannot add typed ID while looping over it.");

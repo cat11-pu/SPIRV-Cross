@@ -41,6 +41,7 @@ option(SPIRV_CROSS_SHARED "Build the C API as a single shared library." OFF)
 option(SPIRV_CROSS_STATIC "Build the C and C++ API as static libraries." ON)
 option(SPIRV_CROSS_CLI "Build the CLI binary. Requires SPIRV_CROSS_STATIC." ON)
 option(SPIRV_CROSS_ENABLE_TESTS "Enable SPIRV-Cross tests." ON)
+option(SPIRV_CROSS_ENABLE_FUZZ_RUNNER "Build the malformed SPIR-V property-test runner." ON)
 
 option(SPIRV_CROSS_ENABLE_GLSL "Enable GLSL support." ON)
 option(SPIRV_CROSS_ENABLE_HLSL "Enable HLSL target support." ON)
@@ -424,6 +425,20 @@ if (SPIRV_CROSS_SHARED)
 	set_target_properties(spirv-cross-c-shared PROPERTIES
 			VERSION ${SPIRV_CROSS_VERSION}
 			SOVERSION ${spirv-cross-abi-major})
+endif()
+
+if (SPIRV_CROSS_ENABLE_FUZZ_RUNNER AND SPIRV_CROSS_STATIC AND
+    SPIRV_CROSS_ENABLE_GLSL AND SPIRV_CROSS_ENABLE_HLSL AND
+    SPIRV_CROSS_ENABLE_MSL AND SPIRV_CROSS_ENABLE_REFLECT)
+	add_executable(spirv-cross-fuzz-runner tests-other/spirv_fuzz_runner.cpp)
+	target_compile_options(spirv-cross-fuzz-runner PRIVATE ${spirv-compiler-options})
+	target_link_libraries(spirv-cross-fuzz-runner PRIVATE
+			spirv-cross-glsl
+			spirv-cross-hlsl
+			spirv-cross-msl
+			spirv-cross-reflect
+			spirv-cross-core)
+	set_target_properties(spirv-cross-fuzz-runner PROPERTIES LINK_FLAGS "${spirv-cross-link-flags}")
 endif()
 
 if (SPIRV_CROSS_CLI)

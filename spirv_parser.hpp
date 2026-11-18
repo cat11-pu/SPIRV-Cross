@@ -55,6 +55,8 @@ private:
 	template <typename T, typename... P>
 	T &set(uint32_t id, P &&... args)
 	{
+		if (id >= ir.ids.size())
+			SPIRV_CROSS_THROW("SPIR-V ID is out of bounds.");
 		ir.add_typed_id(static_cast<Types>(T::type), id);
 		auto &var = variant_set<T>(ir.ids[id], std::forward<P>(args)...);
 		var.self = id;
@@ -64,12 +66,16 @@ private:
 	template <typename T>
 	T &get(uint32_t id)
 	{
+		if (id >= ir.ids.size())
+			SPIRV_CROSS_THROW("SPIR-V ID is out of bounds.");
 		return variant_get<T>(ir.ids[id]);
 	}
 
 	template <typename T>
 	T *maybe_get(uint32_t id)
 	{
+		if (id >= ir.ids.size())
+			return nullptr;
 		if (ir.ids[id].get_type() == static_cast<Types>(T::type))
 			return &get<T>(id);
 		else
@@ -79,13 +85,17 @@ private:
 	template <typename T>
 	const T &get(uint32_t id) const
 	{
+		if (id >= ir.ids.size())
+			SPIRV_CROSS_THROW("SPIR-V ID is out of bounds.");
 		return variant_get<T>(ir.ids[id]);
 	}
 
 	template <typename T>
 	const T *maybe_get(uint32_t id) const
 	{
-		if (ir.ids[id].get_type() == T::type)
+		if (id >= ir.ids.size())
+			return nullptr;
+		if (ir.ids[id].get_type() == static_cast<Types>(T::type))
 			return &get<T>(id);
 		else
 			return nullptr;

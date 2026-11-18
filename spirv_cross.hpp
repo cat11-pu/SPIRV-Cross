@@ -632,6 +632,8 @@ protected:
 	template <typename T, typename... P>
 	T &set(uint32_t id, P &&... args)
 	{
+		if (id >= ir.ids.size())
+			SPIRV_CROSS_THROW("SPIR-V ID is out of bounds.");
 		ir.add_typed_id(static_cast<Types>(T::type), id);
 		auto &var = variant_set<T>(ir.ids[id], std::forward<P>(args)...);
 		var.self = id;
@@ -642,6 +644,8 @@ protected:
 	template <typename T>
 	T &get(uint32_t id)
 	{
+		if (id >= ir.ids.size())
+			SPIRV_CROSS_THROW("SPIR-V ID is out of bounds.");
 		return variant_get<T>(ir.ids[id]);
 	}
 
@@ -659,6 +663,8 @@ protected:
 	template <typename T>
 	const T &get(uint32_t id) const
 	{
+		if (id >= ir.ids.size())
+			SPIRV_CROSS_THROW("SPIR-V ID is out of bounds.");
 		return variant_get<T>(ir.ids[id]);
 	}
 

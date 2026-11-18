@@ -5,6 +5,7 @@
 *.d
 *.txt
 /build
+/.build-asan
 /test
 /spirv-cross
 /obj
